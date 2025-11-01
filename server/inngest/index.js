@@ -1,6 +1,7 @@
 import { Inngest } from "inngest";
 import User from "../models/User.js";
-
+import Booking from "../models/Booking.js";
+import Show from "../models/Show.js";
 // Create a client to send and receive events
 export const inngest = new Inngest({ id: "movie-ticket-booking" });
 
@@ -48,8 +49,52 @@ const syncUserUpdation = inngest.createFunction(
     }
 )
 
+
+// ... (lines 1-49, not shown)
+
+// Inngest Function to cancel booking and release seats of show after 10 minutes of
+// booking created if payment is not made
+const releaseSeatsAndDeleteBooking = inngest.createFunction(
+  {
+    id: 'release-seats-delete-booking',
+    event: "app/checkpayment",
+  },
+  async ({ event, step }) => {
+    // Calculate the timestamp for 10 minutes from now
+    const tenMinutesLater = new Date(Date.now() + 10 * 60 * 1000);
+
+    // Pause the function execution until 10 minutes have passed
+    await step.sleepUntil("wait-for-10-minutes", tenMinutesLater);
+
+    // Resume execution to check payment status
+    await step.run("check-payment-status", async () => {
+      const bookingId = event.data.bookingId;
+      const booking = await Booking.findById(bookingId);
+
+      // If payment is not made, release seats and delete booking
+      if (!booking.isPaid) {
+        const show = await Show.findById(booking.show);
+
+        // Remove the booked seats from the show's occupiedSeats map
+        booking.bookedSeats.forEach((seat) => {
+          delete show.occupiedSeats[seat];
+        });
+
+        // Tell Mongoose that the occupiedSeats map was modified
+        show.markModified('occupiedSeats');
+        await show.save();
+
+        // Delete the expired booking record
+        await Booking.findByIdAndDelete(booking._id);
+      }
+    });
+  }
+);
+
 export const functions = [
     syncUserCreation,
     syncUserDeletion,
-    syncUserUpdation
+    syncUserUpdation,
+    releaseSeatsAndDeleteBooking
+
 ];

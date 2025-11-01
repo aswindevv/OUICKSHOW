@@ -93,15 +93,20 @@ export const createBooking = async (req, res) => {
         booking.paymentLink=session.url
         await booking.save()
 
-
-
-        res.json({ success: true, url:session.url});
-
-    } catch (error) {
-        console.log(error.message);
-        res.json({ success: false, message: error.message });
+      // Run Inngest Sheduler Function to check payment status after 10 minutes
+await inngest.send({
+    name: "app/checkpayment",
+    data: {
+        bookingId: booking._id.toString()
     }
-}
+});
+
+res.json({ success: true, url: session.url });
+
+} catch (error) {
+    console.log(error.message);
+    res.json({ success: false, message: error.message });
+}}
 
 export const getOccupiedSeats = async (req, res) => {
     try {
